@@ -32,3 +32,6 @@ source /opt/ros/kinetic/setup.bash
 roslaunch turtlebot_gazebo turtlebot_world.launch
 
 (After this a new gazebo screen will pop-up with turtlebot in it)
+
+Also see: (follow through tutorial on adding your own urdf in gazebo)
+http://wiki.ros.org/cob_gazebo_worlds/Tutorials/Create%20your%20own%20world
