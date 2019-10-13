@@ -1,0 +1,10 @@
+Constructing buildings in gazebo 
+
+https://www.youtube.com/watch?v=7McYSJFAqlU
+
+pyroomacoustics - a library for sound simulation in a room
+
+Installation:
+	https://pypi.org/project/pyroomacoustics/
+	examples:
+	https://github.com/LCAV/pyroomacoustics/tree/master/notebooks
