@@ -14,18 +14,23 @@ class lscan:
     self.scan =[]
     self.scans = deque(maxlen=10)
     #self.scans.append(['a'])
-    rospy.init_node('scan_observer')
+    #rospy.init_node('scan_observer')
     rospy.Subscriber('/scan', LaserScan, self.scan_callback)
-    t.sleep(1) #1 second initialization time to start getting scans
+    #t.sleep(1) #1 second initialization time to start getting scans
   def see(self):
-    a = self.scans[-1]
-    b=[]
-    for i in a:
-        if np.isnan(i):
-            b.append(-1.0)
-        else:
-            b.append(i)
-    return b
+    print("Entered laser scan")
+    while(True):
+        try:
+            a = self.scans[-1] #if scan is not working this line will fail
+            b=[]
+            for i in a:
+                if np.isnan(i):
+                    b.append(-1.0)
+                else:
+                    b.append(i)
+            return b
+        except:
+            pass
 
   def scan_callback(self, msg):
     self.scan = msg.ranges
@@ -34,6 +39,7 @@ class lscan:
 
 #Testing functions 
 if __name__ == '__main__':
+    rospy.init_node('scan_observer')
     l = lscan()
     print(dt.now())
     for i in range(20):

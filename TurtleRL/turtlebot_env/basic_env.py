@@ -1,9 +1,15 @@
-from Helpers.camera import camera
+#This is a dummy environment file for debugging
+import numpy as np
+import sys
+import rospy
+#print(sys.path)
+from Helpers.camera import Camera
 from Helpers.laser_scan import lscan
 from Helpers.motion import mover
 
 class environ(object):
     def __init__(self):
+        rospy.init_node('env_observers') #This is the common node for camera, lidar, movement
         self.steps = 0
         self.c = Camera("raw")
         self.l = lscan()
@@ -17,7 +23,7 @@ class environ(object):
         obs_lidar = self.l.see()
         obs = {'camera':obs_cam, 'lidar':obs_lidar}
         self.update_state()
-        rew = get_reward(self.state)
+        rew = self.get_reward(self.state)
         return obs,rew,False,[]
 
     def get_reward(self,state):
@@ -41,7 +47,7 @@ class environ(object):
         obs_next = {'camera':obs_cam_next, 'lidar':obs_lidar_next}
 
         self.update_state()
-        rew = get_reward(self.state)
+        rew = self.get_reward(self.state)
 
         self.steps += 1
         done = self.isover()
@@ -52,3 +58,9 @@ class environ(object):
                 
 if __name__ =='__main__':
     e = environ()
+    obs,_,_,_ = e.reset()
+    obs_next,r,done,info = e.step([-0.4,0.5,0.3])
+    print("obs ",obs)
+    print("obs_next ",obs_next)
+    print("reward ",r)
+    print("done ",done)

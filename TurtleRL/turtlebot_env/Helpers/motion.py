@@ -23,7 +23,7 @@ class mover:
     def __init__(self,freq):
         #self.twist = Twist()
         self.cmd_vel_pub = rospy.Publisher('/cmd_vel_mux/input/navi', Twist, queue_size=100)
-        rospy.init_node('wander')
+        #rospy.init_node('wander')
         self.odom_sub = rospy.Subscriber('/odom', Odometry, self.odom_callback)
         self.rate = rospy.Rate(freq)
         self.x_real,self.x_sim = 0.0,0.0
@@ -87,6 +87,7 @@ class mover:
         except rospy.ServiceException, e:
             print "Service call failed: %s" % e
 if __name__ == '__main__':
+    rospy.init_node('wander')
     m=mover(1000)
     #t1 = threading.Thread(target=m.move, args=(5,-1,0.1,20))
     #t1.start()

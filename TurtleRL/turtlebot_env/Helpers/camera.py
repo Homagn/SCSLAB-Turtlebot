@@ -27,7 +27,7 @@ class Camera:
     #Append a random something that is a np array and cant be read by cv2 as an image
     self.images.append(np.array(['a','b','c','d','e']))
     #self.images.append(np.array([1,2,3,4,5]))
-    rospy.init_node('cam_observer')
+    #rospy.init_node('cam_observer')
     if imtype =="raw":
         #dont include subscribe in see fuction, it makes the code very slow (2-5x)
         rospy.Subscriber('camera/rgb/image_raw',Image, self.image_callback)
@@ -63,7 +63,7 @@ class Camera:
 
 #Testing functions 
 if __name__ == '__main__':
-    
+    rospy.init_node('cam_observer')
     # Accessing raw image (should be slower but cant find evidence)
     #Average time to access an image - 0.002 seconds. Above 0.004 is too slow to run RL experiments
     c = Camera("raw")
