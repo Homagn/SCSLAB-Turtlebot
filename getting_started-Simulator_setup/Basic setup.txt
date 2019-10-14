@@ -13,6 +13,7 @@ deb-src http://us.archive.ubuntu.com/ubuntu/ xenial-backports main restricted un
 deb-src http://security.ubuntu.com/ubuntu xenial-security main restricted" > \
   /etc/apt/sources.list.d/official-source-repositories.list'
 sudo apt-get update
+(remove -y if it throws errors)
 sudo apt-get install -y ros-kinetic-librealsense
 
 (this one may not work but dont care proceed)
