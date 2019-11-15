@@ -12,6 +12,7 @@ import time as t
 from datetime import datetime as dt
 import threading
 import os
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 
 class Block:
@@ -30,7 +31,7 @@ class mover:
         self.y_real,self.y_sim = 0.0,0.0
         self.r_real,self.r_sim = 0.0,0.0
         self.z_real,self.z_sim = 0.0,0.0
-        self.blockListDict = {'block_a': Block('mobile_base', 'ground_plane_0')}
+        self.blockListDict = {'block_a': Block('mobile_base', 'ground_plane')}
         self.model_coordinates = rospy.ServiceProxy('/gazebo/get_model_state', GetModelState)
         rospy.wait_for_service('/gazebo/set_model_state')
         t.sleep(1)
@@ -55,20 +56,28 @@ class mover:
     def get_model_pos(self): #get model position in simulator
         for block in self.blockListDict.itervalues():
             blockName = str(block._name)
-            resp_coordinates = self.model_coordinates(blockName, block._relative_entity_name)
+            #resp_coordinates = self.model_coordinates(blockName, block._relative_entity_name)
+            resp_coordinates = self.model_coordinates(blockName, "")
             print '\n'
             print 'Status.success = ', resp_coordinates.success
             print(blockName)
             #print("Cube " + str(block._name))
+            orient_list = [resp_coordinates.pose.orientation.x,resp_coordinates.pose.orientation.y,resp_coordinates.pose.orientation.z,resp_coordinates.pose.orientation.w]
+            euler = euler_from_quaternion(orient_list)
+            print("Euler ",euler)
+            print("Euler yaw ",euler[2])
             self.x_sim = str(resp_coordinates.pose.position.x)
             self.y_sim = str(resp_coordinates.pose.position.y)
             self.z_sim = str(resp_coordinates.pose.position.z)
-            self.r_sim = str(resp_coordinates.pose.orientation.z)
+            #self.r_sim = str(resp_coordinates.pose.orientation.z)
+            self.r_sim = str(euler[2])
 
             print("value in x : " + str(resp_coordinates.pose.position.x))
             print("value in y : " + str(resp_coordinates.pose.position.y))
-            print("value in r : " + str(resp_coordinates.pose.orientation.z))
-            #print("Quaternion X : " + str(resp_coordinates.pose.orientation.x))
+            #print("value in r : " + str(resp_coordinates.pose.orientation.z))
+            #print("value in r : " + str(resp_coordinates.pose.orientation.x))
+            #print("value in r : " + str(resp_coordinates.pose.orientation.y))
+            #print("value in r : " + str(resp_coordinates.pose.orientation.w))
     def teleport(self, x, y, r): #move extremely fast (like a discreet step)
         state_msg = ModelState()
         state_msg.model_name = 'mobile_base'
