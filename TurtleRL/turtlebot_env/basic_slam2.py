@@ -35,17 +35,42 @@ class slam(object):
         self.y_past = float(self.m.y_sim) 
         self.r_past = float(self.m.r_sim)
 
-        self.project_scale = 10.0
+        
         self.pcd_clipx = [-1.5,1.5]
         self.pcd_clipz = [0.69, 2.0]
+        #magic formula to maintain scale invariance while ground projecting
+        self.bz = math.tan(self.pcd_clipz[0]/1024 + 0.5)*33.825 + 5.7 # 24.20828
+        self.bx = math.tan(self.pcd_clipx[0]/1024 + 0.5)*33.825 + 5.7 # 24.11439
 
-        X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) 
-        Y = int(self.project_scale*(self.pcd_clipz[1])) +1
-        self.gmap_pos = [X,int(Y/2)]
+        self.mz = math.tan(self.pcd_clipz[1]/1024 + 0.5)*33.825 + 5.7 # 24.20828
+        self.mx = math.tan(self.pcd_clipx[1]/1024 + 0.5)*33.825 + 5.7 # 24.11439
+
+        self.project_scale = 1000.0 
+        self.pix_move_scale_y = 47.5 #Value found out by experiments for this pcd clip and project_scale
+        self.pix_move_scale_x = 61.42 #Value found out by experiments for this pcd clip and project_scale
+        #X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) 
+        #Y = int(self.project_scale*(self.pcd_clipz[1])) +1
+
+        X = int(round((self.mx-self.bx)*self.project_scale))+1
+        Y = int(round((self.mz-self.bz)*self.project_scale))+1
+
+        self.egocentric_map_t = np.zeros((Y,X))
+
+        self.gmap_pos = [Y,int(X/2)]
+    def initial_localization(self):
+        #invoke if a persistent map already exists
+        #at each time step rotate a small amount and create self.egocentric_map_t
+        #convolve self.egocentric_map_t over self.persistent_map and estimate the most probable location
+        #repeat above two steps by rotating turtlebot in slow steps to 360 each time
+        #Thus find the most probable location and orientation in the already existing map
+        #Or use dense matching/template matching
+        return
     def store_position(self):
-        self.x_past = float(self.m.x_sim)
-        self.y_past = float(self.m.y_sim)
+        #Using absolute movement from start
+        #self.x_past = float(self.m.x_sim)
+        #self.y_past = float(self.m.y_sim)
         #self.r_past = float(self.m.r_sim)
+        return
     def resolve(self,a,b):
         if(a>b):
             return "left"
@@ -56,11 +81,11 @@ class slam(object):
         #imagine the agent being close and then far away from the same wall
         #We make sure that only depth values between -1 and 1 are registered in the depth map
         #Another way to do this would be to normalize the whole pcd matrix between -1 and 1(?)
-        print("max of pcd ",np.max(pcd[:,:,0]))
-        print("min of pcd ",np.min(pcd[:,:,0]))
+        #print("max of pcd ",np.max(pcd[:,:,0]))
+        #rint("min of pcd ",np.min(pcd[:,:,0]))
 
-        print("max of pcd ",np.max(pcd[:,:,2]))
-        print("min of pcd ",np.min(pcd[:,:,2]))
+        #print("max of pcd ",np.max(pcd[:,:,2]))
+        #print("min of pcd ",np.min(pcd[:,:,2]))
         for i in range(pcd.shape[0]):
             for j in range(pcd.shape[1]):
                 k=0 #depth_x
@@ -81,12 +106,20 @@ class slam(object):
         #crop the pcd based on the set bounds on depth
         pcd = self.crop_pcd(pcd,cam)
 
+        X = int(round((self.mx-self.bx)*self.project_scale))+1
+        Y = int(round((self.mz-self.bz)*self.project_scale))+1
+
+        self.egocentric_map_t = np.zeros((Y,X))
+
         competing_elements = []
         competing_elements_pixel = []
         for i in range (480): #image_dim_x
             for j in range (640): #image_dim_y
-                element = [int(self.project_scale*pcd[i,j,0]),int(self.project_scale*pcd[i,j,2])]
-                if element[0]>=1000 or element[1]>=1000: #These are mostly garbage/NAN mappings
+                e1 = int(round(self.project_scale*((math.tan(pcd[i,j,0]/1024 + 0.5)*33.825 + 5.7)-self.bx)))
+                e2 = int(round(self.project_scale*((math.tan(pcd[i,j,2]/1024 + 0.5)*33.825 + 5.7)-self.bz)))
+                #element = [int(self.project_scale*pcd[i,j,0]),int(self.project_scale*pcd[i,j,2])]
+                element = [e1,e2]
+                if pcd[i,j,0]>=1000 or pcd[i,j,2]>=1000: #These are mostly garbage/NAN mappings
                     continue
                 if(element in competing_elements):
                     #resolve function here !
@@ -99,45 +132,51 @@ class slam(object):
 
         m1=[]
         m2=[]
+        #print("competing elements ",competing_elements)
         if(len(competing_elements)==0):
             print("In a vast open space !")
-            X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) +1
-            sX = int(X/2)+min(m1)
-            Y = int(self.project_scale*(self.pcd_clipz[1])) +1
-            self.egocentric_map_t = np.zeros((X,Y))
+            
         else:
             for i in competing_elements:
                 m1.append(i[0])
                 m2.append(i[1])
-            print("max of competing elements ",max(m1))
-            print("max of competing elements ",max(m2))
-            print("min of competing elements ",min(m1))
-            print("min of competing elements ",min(m2))
+            #print("max of competing elements ",max(m1))
+            #print("max of competing elements ",max(m2))
+            #print("min of competing elements ",min(m1))
+            #print("min of competing elements ",min(m2))
 
-            X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) +1
-            sX = int(X/2)+min(m1)
-            Y = int(self.project_scale*(self.pcd_clipz[1])) +1
-            self.egocentric_map_t = np.zeros((X,Y))
+            #X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) +1
+            #Y = int(self.project_scale*(self.pcd_clipz[1])) +1
+            #self.egocentric_map_t = np.zeros((X,Y))
             print("resolving and constructing local map")
             for i in range(len(competing_elements)):
                 #In order to follow numpy array ordering need to flip i[1] and i[0] positions
                 #self.egocentric_map_t[competing_elements[i][1]+min(m2),competing_elements[i][0]+sX] = competing_elements_pixel[i]
+                self.egocentric_map_t[competing_elements[i][1],competing_elements[i][0]] = competing_elements_pixel[i]
                 try:
-                    self.egocentric_map_t[competing_elements[i][1],competing_elements[i][0]+sX] = competing_elements_pixel[i]
+                    self.egocentric_map_t[competing_elements[i][1],competing_elements[i][0]] = competing_elements_pixel[i]
                 except:
                     print("Error occured in ground projecting")
             self.egocentric_map_t = np.flip(self.egocentric_map_t,0)
         cv2.imwrite('ego_map.jpg', self.egocentric_map_t*255.0)
    
-    def patch(self,source,target,targ_trans,targ_rot):
+    def patch(self,source,target,targ_trans,targ_rot,testing = False): 
+        #NOTE !- Target trans supplied as [y,x]
+        #NOTE !- due to faulty sequence of operations rotation and translation
+        #       has to be patched seperately as consequtive calls
         #source is a np array
         #target is also (possibly smaller np array)
+        print("Patching local map to global map, please wait")
         targ_rot = math.radians(targ_rot)
         s = copy.copy(source)
         t = copy.copy(target)
         #s_c = [s.shape[0]-1,int(s.shape[1]/2)]
         #s_c = [s.shape[0]-1+source_trans[0],int(s.shape[1]/2)+source_trans[1]]
-        s_c = [self.gmap_pos[0],self.gmap_pos[1]]
+        if testing:
+            s_c = [s.shape[0]-1,int(s.shape[1]/2)]
+        else:
+            s_c = [s.shape[0]-1,int(s.shape[1]/2)]
+            #s_c = [self.gmap_pos[0],self.gmap_pos[1]]
         s_maps = []
         s_maps_x = []
         s_maps_y = []
@@ -150,15 +189,19 @@ class slam(object):
                 s_maps_y.append(int(s_c[0]-i))
                 s_v.append(s[i,j])
         #print("s_maps ",s_maps)
-        #translate target map to camera observer perspective
-        #plus apply the target translation too
+        #translate target map to camera observer perspective and rotate point by point
+        
         t_c = [t.shape[0]-1,int(t.shape[1]/2)]
         t_maps = []
         for i in range(t.shape[0]):
             for j in range(t.shape[1]):
+                #x = int(j-t_c[1])*math.cos(targ_rot) - int(t_c[0]-i)*math.sin(targ_rot)
+                #y = int(j-t_c[1])*math.sin(targ_rot) + int(t_c[0]-i)*math.cos(targ_rot)
                 t_maps.append([int(j-t_c[1]+targ_trans[1]), int(t_c[0]-i+targ_trans[0]), t[i,j]])
-        #Now rotate the target (anticlockwise)
+                #t_maps.append([x,y,t[i,j]])
+        
         #print("t_maps ",t_maps)
+        #apply the target translation
         t_maps_r = []
         t_maps_x = []
         t_maps_y = []
@@ -166,21 +209,26 @@ class slam(object):
         for i in range(len(t_maps)):
             x = t_maps[i][0]*math.cos(targ_rot)-t_maps[i][1]*math.sin(targ_rot)
             y = t_maps[i][0]*math.sin(targ_rot)+t_maps[i][1]*math.cos(targ_rot)
+
+            #x = t_maps[i][0] + targ_trans[1]
+            #y = t_maps[i][0] + targ_trans[0]
+
             v = t_maps[i][2]
             t_maps_r.append([int(round(x)),int(round(y))])
             t_maps_x.append(int(round(x)))
             t_maps_y.append(int(round(y)))
             t_v.append(v)
+
         #print("t_maps_r ",t_maps_r)
         #Now patch together s_maps and t_maps_r
         X1 = max(max(t_maps_x),max(s_maps_x))  
-        print("X1 ",X1)
+        #print("X1 ",X1)
         X2 = min(min(t_maps_x),min(s_maps_x))
-        print("X2 ",X2)
+        #print("X2 ",X2)
         Y1 = max(max(t_maps_y),max(s_maps_y)) 
-        print("Y1 ",Y1)
+        #print("Y1 ",Y1)
         Y2 = min(min(t_maps_y),min(s_maps_y))
-        print("Y2 ",Y2)
+        #print("Y2 ",Y2)
 
         combined = np.zeros((Y1-Y2, X1-X2))
         for i in range(X2,X1):
@@ -201,9 +249,30 @@ class slam(object):
                     val = (float(val1)+float(val2))/num
                 combined[j-Y2,i-X2] = val
         combined = np.flip(combined,0)
-        #Update position in global map
-        self.gmap_pos[0] = self.gmap_pos[0] + targ_trans[0] #- X2
-        self.gmap_pos[1] = self.gmap_pos[1] + targ_trans[1] #- Y2
+        
+        if targ_rot < 0 : #This is perceived clockwise and absolute
+            #clip protrusions caused due to rotating patch
+            t_r = math.fabs(targ_rot)
+            inc_x_pix = int(round(math.sin(t_r)*t_c[1]))
+            diag = t_c[0]**2 + t_c[1]**2
+            b_ang = math.atan(t_c[0]/t_c[1])
+            inc_y_pix = int(round(diag*(math.cos(b_ang-t_r) - math.cos(b_ang))))
+            combined = combined[0:-inc_x_pix,inc_y_pix:]
+        if targ_rot > 0:
+            #clip protrusions caused due to rotating patch
+            t_r = math.fabs(targ_rot)
+            inc_x_pix = int(round(math.sin(t_r)*t_c[1]))
+            diag = t_c[0]**2 + t_c[1]**2
+            b_ang = math.atan(t_c[0]/t_c[1])
+            inc_y_pix = int(round(diag*(math.cos(b_ang-t_r) - math.cos(b_ang))))
+            combined = combined[0:-inc_x_pix,0:inc_y_pix] #only this line changes
+        
+        #Update position in global map (following absolute coordinates, so not needed)
+        #self.gmap_pos[0] = self.gmap_pos[0] + targ_trans[0] #- X2
+        #self.gmap_pos[1] = self.gmap_pos[1] + targ_trans[1] #- Y2
+        if testing == False:
+            self.gmap_pos[0] += targ_trans[0]  
+            self.gmap_pos[1] += targ_trans[1]
 
         return combined
 
@@ -212,8 +281,10 @@ class slam(object):
         #convolve self.egocentric_map_t over self.persistent_map and estimate the most probable location and orientation
         #Or use dense matching/template matching
         self.m.get_model_pos()
-        self.rx = self.project_scale*(float(self.m.x_sim) - self.x_past)
-        self.ry = self.project_scale*(float(self.m.y_sim) - self.y_past)
+        #self.rx = self.project_scale*(float(self.m.x_sim) - self.x_past)
+        #self.ry = self.project_scale*(float(self.m.y_sim) - self.y_past)
+        self.rx = float(self.m.x_sim) - self.x_past
+        self.ry = float(self.m.y_sim) - self.y_past
         self.rot = float(self.m.r_sim) #- self.r_past
         #We are using perfect feedback from Gazebo
         #Otherwise need a Kalman Filter approach combining dense matching with robot kinematics 
@@ -224,8 +295,15 @@ class slam(object):
         try:
             a = cv2.imread('persistent_map.jpg',0)
             b = cv2.imread('ego_map.jpg',0)
-            c = s.patch(a,b,[-x,-y],r) #pass -y due to the way numpy array orders
-            cv2.imwrite('persistent_map.jpg', c)
+            #Actual
+            c = np.zeros_like(b)
+            d = s.patch(c,b,[0,0],round(r)) 
+            e = s.patch(a,d,[y*self.pix_move_scale_y,x*self.pix_move_scale_x],0)
+            cv2.imwrite('persistent_map.jpg', e)
+            #Tests used for finding self.pix_move_scale_y and self.pix_move_scale_x
+            #c = s.patch(a,b,[0,0],0) #pass -y due to the way numpy array orders
+            #cv2.imwrite('persistent_map.jpg', c)
+            
         except:
             print("persistent map does not exist, maybe first try")
             b = cv2.imread('ego_map.jpg',0)
@@ -245,17 +323,6 @@ class slam(object):
         blurred = cv2.GaussianBlur(image, (3, 3), 0)
         #Detect the ground plane
         cv_image = cv2.threshold(blurred, 30, 40, cv2.THRESH_BINARY)[1]
-        #cv_image2 = cv2.threshold(blurred, 25, 30, cv2.THRESH_BINARY)[1]
-        #cv_image = 0.5*(cv_image1+cv_image2)
-        '''
-        #thresholding inversion
-        for i in range(cv_image.shape[0]):
-            for j in range(cv_image.shape[1]):
-                if(cv_image[i,j]==0.0):
-                    cv_image[i,j]=1.0
-                else:
-                    cv_image[i,j]=0.0
-        '''
         cv2.imshow("blocks", cv_image)
         cv2.waitKey(1)
         cv2.imwrite('thresh.jpg', cv_image*255.0)
@@ -272,61 +339,49 @@ if __name__ =='__main__':
         if(testVar=='y'):
             print("stopping SLAM")
             break
+        s.store_position()
         x,y,r = s.localize()
         s.ground_project()
-        
         s.register_update(x,y,r)
-        s.store_position()
         #s.random_movement()
     
 #Algorithm in brief:
 '''
-1. Initialize empty persistent map
+1. Initialize empty persistent map, fix an absolute coordinate where robot starts
 
 2. Obtain egocentric map by fusing depth with image and ground projecting
+    Note - Perfect thresholding needed for seperating out ground in image from 
+    other collidable objects
+    Note - Depth values need clipping to a certain range
+    Note - A special tan function is used according to the clipping range of the depth map
+    pcd_clipx and pcd_clipz. If those two parameters change then
+    project_scale and the tan function woud also have to change
+    (tan function is used to compensate for scaling errors of kinect
+    -more accurate depth sensing closer and gets worse farther away)
 
-3. Estimate relative difference in position (x,y) of the robot from initial (fixed) position in persistent 
-    map from robot motion/kinematics
+3. Perceive relative change in (x,y,r) from the initial start mapping positions,orientations.
+    That is, perceive the current absolute coordinate position,orientation.
 
-    Estimate relative difference in orientation R of the robot from initial position in persistent 
-    map from robot motion/kinematics
-
-4. Obtain something called relative map by cropping persistent map once relative displacement and
-    relative rotation is known from 3
-    Cropping rule:
-    If robot is facing top-right diagonal (persistent map), crop the first quadrant by using 
-    relative displacement positions
-    If robot is facing top-left diagonal, crop the second quadrant by using relative displacement
-    positions
-    If robot is facing bottom-left diagonal, crop the third quadrant by using relative displacement
-    positions
-    If robot is facing bottom-right diagonal, crop the fourth quadrant by using relative displacement
-    positions
-
-    (obtaining relative map is extremely necessary in order to avoid false matching in step 5)
-    False matching - the patches match but corresponding positions in real world dont match
-
-5. Use template matching of egocentric map wrt relative map to localize the agent in the persistent
-    map. (try to match various rotations of template with any position (A,B) in relative map and
-    obtain a probability field- The index of the highest value in prob. field is the agent location)
-
-6. Patch the egocentric map at the estimated location in relative map
-    template re-rotation while patching:
-    6.1 rotate the template (egocenric map) by R (step 3) while patching to relative map
-    6.2 translate the template (egocenric map) by (A,B) (step 5) while patching to relative map
-
-7. Patch the relative map to the persistent map. (update the cropped portion)
+4. Using a special patch function, rotate and translate the egocentric map according to
+    perceived relative changes, and patch it to the global map.(pixel by pixel- averaging as needed)
+    Note- Size of global map increases after this step.
+    Note- Cropping needs to be applied to egocentric map after relative rotation
 '''
 
 #To do:
 '''
 1. Need perfect thresholding for detecting walls/obstacles in detect_blocks
-2. Tests to do:
+2. Tests to do: (All passed !)
     static ground projection tests: close and away from a wall, near corner of 2 walls
     SLAM test: Moving towards a wall, away from wall, turning near a wall, turning near a corner
                moving along a long corridor (hallway)
-3. ! something wrong with ego map creation- its not getting updated before persistent map
-    Also the rotation angle supplied to patch function has to be made negetaive of current(prob)
+3. Construct a barrier in main() that allows user to proceed to next step only 
+   after depth maps are updated
+   They are updated once every 2 seconds
+4. This whole process is very slow (needs performance hunting)
+5. ! Slight offset present when patching ego map to global map 
+
+Others:
 
 3. s.random_movement() is very random, need an intelligent way to auto explore so that user dont have to do keyboard teleop
 4. Use Neural networks for context based feature extraction from image
