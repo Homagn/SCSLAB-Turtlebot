@@ -84,10 +84,19 @@ class mover:
         state_msg.pose.position.x = float(self.x_sim) + x
         state_msg.pose.position.y = float(self.y_sim) + y
         state_msg.pose.position.z = float(self.z_sim) + 0.0
+
+        quaternion =quaternion_from_euler(0.0, 0.0, float(self.r_sim) + r)
+        #type(pose) = geometry_msgs.msg.Pose
+        state_msg.pose.orientation.x = quaternion[0]
+        state_msg.pose.orientation.y = quaternion[1]
+        state_msg.pose.orientation.z = quaternion[2]
+        state_msg.pose.orientation.w = quaternion[3]
+        '''
         state_msg.pose.orientation.x = 0
         state_msg.pose.orientation.y = 0
         state_msg.pose.orientation.z = float(self.r_sim) + r
         state_msg.pose.orientation.w = 0
+        '''
         #rospy.wait_for_service('/gazebo/set_model_state') #already called in init
         try:
             set_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
