@@ -47,7 +47,8 @@ class slam(object):
 
         self.project_scale = 1000.0 
         self.pix_move_scale_y = 47.5 #Value found out by experiments for this pcd clip and project_scale
-        self.pix_move_scale_x = 61.42 #Value found out by experiments for this pcd clip and project_scale
+        self.pix_move_scale_x = 61.42/2 #Value found out by experiments for this pcd clip and project_scale
+        #self.pix_move_scale_x = 51.42 #Value found out by experiments for this pcd clip and project_scale
         #X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) 
         #Y = int(self.project_scale*(self.pcd_clipz[1])) +1
 
@@ -55,8 +56,9 @@ class slam(object):
         Y = int(round((self.mz-self.bz)*self.project_scale))+1
 
         self.egocentric_map_t = np.zeros((Y,X))
+        self.offset = [-Y,X/2]
 
-        self.gmap_pos = [Y,int(X/2)]
+        self.map_pos = [0,0]
     def initial_localization(self):
         #invoke if a persistent map already exists
         #at each time step rotate a small amount and create self.egocentric_map_t
@@ -160,7 +162,72 @@ class slam(object):
             self.egocentric_map_t = np.flip(self.egocentric_map_t,0)
         cv2.imwrite('ego_map.jpg', self.egocentric_map_t*255.0)
    
-    def patch(self,source,target,targ_trans,targ_rot,testing = False): 
+    def shrink(self,target,angle):
+        a= math.radians(math.fabs(angle))
+        scale_y = math.sin(a)
+        scale_x = math.cos(a)
+
+        if(scale_x==0):
+            scale_x = 1
+        width = int(target.shape[1] * scale_x)
+        height = int(target.shape[0] * scale_y)
+        dim = (width, height)
+        # resize image
+        resized = cv2.resize(target, dim, interpolation = cv2.INTER_AREA)
+        return resized
+    def rotateImage(self,image,angle):
+        image_center = tuple(np.array(image.shape[1::-1])/2)
+        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+        result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
+        return result
+    def patch2(self,source,target,targ_trans,testing=False):
+        s = np.array(copy.copy(source))
+        global_map = copy.copy(s)
+
+        s_end_x = s.shape[0]
+        s_end_y = s.shape[1]
+
+        t = np.array(copy.copy(target))
+        tb = [t.shape[0]-1, int(t.shape[1]/2)]
+        if testing:
+            sb = [(s.shape[0]-1),s.shape[1]/2]
+        else:
+            sb = [-self.offset[0]-1+self.map_pos[0], self.offset[1] + self.map_pos[1]]
+            self.map_pos[0]+=targ_trans[0]
+            self.map_pos[1]+=targ_trans[1]
+        #x is downwards, y is sideways
+        patch_start_x = sb[0]-tb[0]+targ_trans[0]
+        patch_start_y = sb[1]-tb[1]+targ_trans[1]
+
+        patch_end_x = sb[0]+targ_trans[0]+1
+        patch_end_y = sb[1]+tb[1]+targ_trans[1]
+
+
+        while patch_start_x<0:
+            #pad arguments go for top,down.left,right accordingly
+            global_map = np.pad(global_map, ((1, 0),(0,0)), 'constant',constant_values=0)
+            patch_start_x+=1
+            patch_end_x+=1
+
+        while patch_start_y<0:
+            global_map = np.pad(global_map, ((0, 0),(1,0)), 'constant',constant_values=0)
+            patch_start_y+=1
+            patch_end_y+=1
+
+        while patch_end_x>s_end_x:
+            global_map = np.pad(global_map, ((0, 1),(0,0)), 'constant',constant_values=0)
+            s_end_x+=1
+
+        while patch_end_y>s_end_y:
+            global_map = np.pad(global_map, ((0, 0),(0,1)), 'constant',constant_values=0)
+            s_end_y+=1
+
+        global_map[patch_start_x:patch_end_x, patch_start_y:patch_end_y] += t
+        return global_map
+
+
+
+    def patch(self,source,target,targ_trans,targ_rot,targ_center = None, testing = False): 
         #NOTE !- Target trans supplied as [y,x]
         #NOTE !- due to faulty sequence of operations rotation and translation
         #       has to be patched seperately as consequtive calls
@@ -170,13 +237,25 @@ class slam(object):
         targ_rot = math.radians(targ_rot)
         s = copy.copy(source)
         t = copy.copy(target)
+        t = np.array(t)
         #s_c = [s.shape[0]-1,int(s.shape[1]/2)]
         #s_c = [s.shape[0]-1+source_trans[0],int(s.shape[1]/2)+source_trans[1]]
         if testing:
-            s_c = [s.shape[0]-1,int(s.shape[1]/2)]
+            s_c = [(s.shape[0]-1),s.shape[1]/2]
         else:
-            s_c = [s.shape[0]-1,int(s.shape[1]/2)]
+            s_c = [-self.offset[0]-1+self.map_pos[0], self.offset[1] + self.map_pos[1]]
+            self.map_pos[0]+=targ_trans[0]
+            self.map_pos[1]+=targ_trans[1]
+        t_c = [(t.shape[0]-1),t.shape[1]/2]
+        '''
+        if not targ_center:
+            s_c = [-(s.shape[0]-1),s.shape[1]/2]
+            #s_c = [0,0]
+        else:
+            #s_c = [s.shape[0]/2,s.shape[1]/2]
+            s_c = [0,0]
             #s_c = [self.gmap_pos[0],self.gmap_pos[1]]
+        '''
         s_maps = []
         s_maps_x = []
         s_maps_y = []
@@ -190,8 +269,23 @@ class slam(object):
                 s_v.append(s[i,j])
         #print("s_maps ",s_maps)
         #translate target map to camera observer perspective and rotate point by point
-        
-        t_c = [t.shape[0]-1,int(t.shape[1]/2)]
+        '''
+        if not targ_center: #if wanna translate, translate about observer point
+            #t_c = [t.shape[0]/2 -1 + targ_offset[0],int(t.shape[1]/2)-targ_offset[1]]
+            t_c = [-107,t.shape[1]/2 ]
+            #t_c = [t.shape[0]/2 ,t.shape[1]/2 ]
+        else: #if wanna just rotate rotate about center of image
+            #t_c = [t.shape[0]/2 ,t.shape[1]/2]
+            #t_c = [t.shape[0] -1 - targ_offset[0],t.shape[1]/2 - targ_offset[1]]
+            t_c = targ_center
+        '''
+        '''
+        obs_point = [-copy.copy(t.shape[1]/2),107]
+        x = obs_point[0]*math.cos(targ_rot)-obs_point[1]*math.sin(targ_rot)
+        y = obs_point[0]*math.sin(targ_rot)+obs_point[1]*math.cos(targ_rot)
+        n_obs_point = [x,y]
+        '''
+
         t_maps = []
         for i in range(t.shape[0]):
             for j in range(t.shape[1]):
@@ -207,8 +301,10 @@ class slam(object):
         t_maps_y = []
         t_v = []
         for i in range(len(t_maps)):
-            x = t_maps[i][0]*math.cos(targ_rot)-t_maps[i][1]*math.sin(targ_rot)
-            y = t_maps[i][0]*math.sin(targ_rot)+t_maps[i][1]*math.cos(targ_rot)
+            #t_maps[i][0]*=math.cos(math.fabs(targ_rot))
+            #t_maps[i][1]*=math.sin(math.fabs(targ_rot))
+            x = (t_maps[i][0]*math.cos(targ_rot)-t_maps[i][1]*math.sin(targ_rot))#*math.cos(math.fabs(targ_rot))
+            y = (t_maps[i][0]*math.sin(targ_rot)+t_maps[i][1]*math.cos(targ_rot))#*math.sin(math.fabs(targ_rot))
 
             #x = t_maps[i][0] + targ_trans[1]
             #y = t_maps[i][0] + targ_trans[0]
@@ -222,13 +318,13 @@ class slam(object):
         #print("t_maps_r ",t_maps_r)
         #Now patch together s_maps and t_maps_r
         X1 = max(max(t_maps_x),max(s_maps_x))  
-        #print("X1 ",X1)
+        print("X1 ",X1)
         X2 = min(min(t_maps_x),min(s_maps_x))
-        #print("X2 ",X2)
+        print("X2 ",X2)
         Y1 = max(max(t_maps_y),max(s_maps_y)) 
-        #print("Y1 ",Y1)
+        print("Y1 ",Y1)
         Y2 = min(min(t_maps_y),min(s_maps_y))
-        #print("Y2 ",Y2)
+        print("Y2 ",Y2)
 
         combined = np.zeros((Y1-Y2, X1-X2))
         for i in range(X2,X1):
@@ -249,7 +345,14 @@ class slam(object):
                     val = (float(val1)+float(val2))/num
                 combined[j-Y2,i-X2] = val
         combined = np.flip(combined,0)
-        
+        '''
+        ip = [n_obs_point[1]-obs_point[1],obs_point[0]-n_obs_point[0]]
+        print("n_obs_point ",n_obs_point)
+        print("got ip ",n_obs_point[1]-obs_point[1],n_obs_point[0]-obs_point[0])
+        ip[1] = combined.shape[1]+ip[1]
+        '''
+        #combined = combined[int(ip[0]):,0:combined.shape[1]-int(ip[1])]
+        '''
         if targ_rot < 0 : #This is perceived clockwise and absolute
             #clip protrusions caused due to rotating patch
             t_r = math.fabs(targ_rot)
@@ -266,13 +369,20 @@ class slam(object):
             b_ang = math.atan(t_c[0]/t_c[1])
             inc_y_pix = int(round(diag*(math.cos(b_ang-t_r) - math.cos(b_ang))))
             combined = combined[0:-inc_x_pix,0:inc_y_pix] #only this line changes
-        
+        '''
         #Update position in global map (following absolute coordinates, so not needed)
         #self.gmap_pos[0] = self.gmap_pos[0] + targ_trans[0] #- X2
         #self.gmap_pos[1] = self.gmap_pos[1] + targ_trans[1] #- Y2
+        '''
+        if(targ_rot!=0.0):
+            #rot_crops = [x-int(combined.shape[0]/2), int(combined.shape[1]/2 - y)]
+            rot_crops = [57,0]
+        else:
+            rot_crops = [0.0,0.0]
         if testing == False:
             self.gmap_pos[0] += targ_trans[0]  
             self.gmap_pos[1] += targ_trans[1]
+        '''
 
         return combined
 
@@ -295,19 +405,50 @@ class slam(object):
         try:
             a = cv2.imread('persistent_map.jpg',0)
             b = cv2.imread('ego_map.jpg',0)
-            #Actual
-            c = np.zeros_like(b)
-            d = s.patch(c,b,[0,0],round(r)) 
-            e = s.patch(a,d,[y*self.pix_move_scale_y,x*self.pix_move_scale_x],0)
-            cv2.imwrite('persistent_map.jpg', e)
-            #Tests used for finding self.pix_move_scale_y and self.pix_move_scale_x
-            #c = s.patch(a,b,[0,0],0) #pass -y due to the way numpy array orders
-            #cv2.imwrite('persistent_map.jpg', c)
-            
+            c = self.rotateImage(b,round(r))
+            cv2.imwrite('rotated.jpg', c)
+
+            rad_r = math.radians(round(r))
+            offset_x = 0
+            offset_y = 0
+            if round(r)!=0:
+                offset_y = (1-math.cos(rad_r))*(-self.offset[0])
+                offset_x = (1+math.sin(rad_r))*(self.offset[1])
+            Y = y*self.pix_move_scale_y + offset_y
+            X = x*self.pix_move_scale_x + offset_x
+            print(y*self.pix_move_scale_y)
+            print(x*self.pix_move_scale_x)
+            print(Y)
+            print(X)
+
+            d = self.patch2(a,c,[-int(Y),int(X)])
+            cv2.imwrite('persistent_map.jpg', d)
         except:
             print("persistent map does not exist, maybe first try")
             b = cv2.imread('ego_map.jpg',0)
             cv2.imwrite('persistent_map.jpg', b)
+        
+        '''
+        #Actual
+        c = np.zeros_like(b)
+        if round(r)!=0:
+            #d= self.shrink(b,round(r)) 
+            #d = b
+            e= self.patch(a,b,[y*self.pix_move_scale_y,x*self.pix_move_scale_x],round(r))
+            cv2.imwrite('persistent_map.jpg', e)
+        if round(r)==0:
+            e= self.patch(a,b,[y*self.pix_move_scale_y,x*self.pix_move_scale_x],0)
+            cv2.imwrite('persistent_map.jpg', e)
+        #Tests used for finding self.pix_move_scale_y and self.pix_move_scale_x
+        #c = s.patch(a,b,[0,0],0) #pass -y due to the way numpy array orders
+        #cv2.imwrite('persistent_map.jpg', c)
+        '''
+        '''    
+        except:
+            print("persistent map does not exist, maybe first try")
+            b = cv2.imread('ego_map.jpg',0)
+            cv2.imwrite('persistent_map.jpg', b)
+        '''
         
     def random_movement(self):
         print("Turtlebot moving randomly ")
@@ -333,7 +474,7 @@ class slam(object):
 if __name__ =='__main__':
     
     s = slam()
-
+    #m = mover(1000)
     while(True):
         testVar = raw_input("Finished moving? (y/n).")
         if(testVar=='y'):
