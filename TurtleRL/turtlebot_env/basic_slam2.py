@@ -46,8 +46,8 @@ class slam(object):
         self.mx = math.tan(self.pcd_clipx[1]/1024 + 0.5)*33.825 + 5.7 # 24.11439
 
         self.project_scale = 1000.0 
-        self.pix_move_scale_y = 47.5 #Value found out by experiments for this pcd clip and project_scale
-        self.pix_move_scale_x = 61.42/2 #Value found out by experiments for this pcd clip and project_scale
+        self.pix_move_scale_y = 43.181 #Value found out by experiments for this pcd clip and project_scale
+        self.pix_move_scale_x = 42.904 #Value found out by experiments for this pcd clip and project_scale
         #self.pix_move_scale_x = 51.42 #Value found out by experiments for this pcd clip and project_scale
         #X = int(self.project_scale*(self.pcd_clipx[1]-self.pcd_clipx[0])) 
         #Y = int(self.project_scale*(self.pcd_clipz[1])) +1
@@ -57,8 +57,9 @@ class slam(object):
 
         self.egocentric_map_t = np.zeros((Y,X))
         self.offset = [-Y,X/2]
+        self.offs = [Y,int(X/2)]
 
-        self.map_pos = [0,0]
+        self.map_pos = [Y,int(X/2)]
     def initial_localization(self):
         #invoke if a persistent map already exists
         #at each time step rotate a small amount and create self.egocentric_map_t
@@ -192,9 +193,9 @@ class slam(object):
         if testing:
             sb = [(s.shape[0]-1),s.shape[1]/2]
         else:
-            sb = [-self.offset[0]-1+self.map_pos[0], self.offset[1] + self.map_pos[1]]
-            self.map_pos[0]+=targ_trans[0]
-            self.map_pos[1]+=targ_trans[1]
+            sb = [self.map_pos[0], self.map_pos[1]]
+            #self.map_pos[0] = self.offs[0] #- targ_trans[0]
+            #self.map_pos[1] = self.offs[1] #+ targ_trans[1]
         #x is downwards, y is sideways
         patch_start_x = sb[0]-tb[0]+targ_trans[0]
         patch_start_y = sb[1]-tb[1]+targ_trans[1]
@@ -208,11 +209,13 @@ class slam(object):
             global_map = np.pad(global_map, ((1, 0),(0,0)), 'constant',constant_values=0)
             patch_start_x+=1
             patch_end_x+=1
+            self.map_pos[0]+=1
 
         while patch_start_y<0:
             global_map = np.pad(global_map, ((0, 0),(1,0)), 'constant',constant_values=0)
             patch_start_y+=1
             patch_end_y+=1
+            self.map_pos[1]+=1
 
         while patch_end_x>s_end_x:
             global_map = np.pad(global_map, ((0, 1),(0,0)), 'constant',constant_values=0)
@@ -405,6 +408,7 @@ class slam(object):
         try:
             a = cv2.imread('persistent_map.jpg',0)
             b = cv2.imread('ego_map.jpg',0)
+            
             c = self.rotateImage(b,round(r))
             cv2.imwrite('rotated.jpg', c)
 
@@ -423,6 +427,12 @@ class slam(object):
 
             d = self.patch2(a,c,[-int(Y),int(X)])
             cv2.imwrite('persistent_map.jpg', d)
+            
+            '''
+            #Tests used for finding self.pix_move_scale_y and self.pix_move_scale_x
+            c = s.patch2(a,b,[0,0]) #pass -y due to the way numpy array orders
+            cv2.imwrite('persistent_map.jpg', c)
+            '''
         except:
             print("persistent map does not exist, maybe first try")
             b = cv2.imread('ego_map.jpg',0)
