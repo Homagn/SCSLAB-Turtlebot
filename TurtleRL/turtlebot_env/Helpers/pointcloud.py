@@ -10,6 +10,7 @@ import numpy as np
 import math
 from collections import deque
 from datetime import datetime as dt
+import time as t
 #NOTE: It returns a 5 dimensional entity: At each 480x640 pixel locations it stores the laser distance x,y, and z from camera
 
 class pointcloud:
@@ -22,7 +23,7 @@ class pointcloud:
     self.viz_save = viz_save
     #self.images.append(np.array([1,2,3,4,5]))
     #rospy.init_node('cam_observer')
-    rospy.Subscriber("/camera/depth/points", PointCloud2, self.callback)
+    rospy.Subscriber("/camera/depth/points", PointCloud2, self.callback1)
   def see(self):
     while np.shape(self.images[-1])[0]!=3:
         try: 
@@ -32,6 +33,35 @@ class pointcloud:
         except:
             #print("OpenCV error")
             pass
+  def callback1(self,msg): #About 7 times faster than callback
+    #data_out = pc2.read_points(msg, skip_nans=False) #Takes image the same size as camera - 480x640
+    cloud_points = list(pc2.read_points(msg, skip_nans=False, field_names = ("x", "y", "z")))
+    #print(cloud_points)
+    x_part = [i[0] for i in cloud_points]
+    y_part = [i[1] for i in cloud_points]
+    z_part = [i[2] for i in cloud_points]
+
+    scale = self.scale
+    x_part = np.array(x_part).reshape((480,640))*scale
+    y_part = np.array(y_part).reshape((480,640))*scale
+    z_part = np.array(z_part).reshape((480,640))*scale
+    #Remove NAN
+    depth_msg = np.zeros((480,640,3))
+    depth_msg[:,:,0]=x_part
+    depth_msg[:,:,1]=y_part
+    depth_msg[:,:,2]=z_part
+    where_are_NaNs = np.isnan(depth_msg)
+    depth_msg[where_are_NaNs] = 0.0
+
+    cv2.imwrite('x.jpg', x_part)
+    cv2.imwrite('y.jpg', y_part)
+    cv2.imwrite('z.jpg', z_part)
+    #status = cv2.imwrite('current_depth_image.png',depth_msg) 
+    print("File end")
+    
+    self.image = depth_msg
+    self.images.append(self.image)
+
   def callback(self, msg):
     #data_out = pc2.read_points(msg, skip_nans=True)
     data_out = pc2.read_points(msg, skip_nans=False) #Takes image the same size as camera - 480x640
@@ -70,7 +100,7 @@ class pointcloud:
             self.image = depth_msg
             self.images.append(self.image)
             if self.viz_save:
-                #print("File end")
+                print("File end")
                 scale = 200.0
                 x_part = np.array(x_part).reshape((480,640))*scale
                 cv2.imwrite('x.jpg', x_part)
@@ -91,9 +121,21 @@ class pointcloud:
 if __name__ == '__main__':
     rospy.init_node('depth_point_cloud')
     p = pointcloud(viz_save = True)
+    t.sleep(1) #Need 1 second sleep for some reason
+    print(dt.now())
+    image = p.see()*200.0
+    print(dt.now())
+    status = cv2.imwrite('current_depth_image.png',image) 
+
+    #old function
+    '''
+    p = pointcloud(viz_save = True)
+    #t.sleep(5)
     print(dt.now())
     image = p.see()*200.0
     print(dt.now())
     status = cv2.imwrite('current_depth_image.png',image) 
     print(np.shape(image))
+    '''
+    
 
