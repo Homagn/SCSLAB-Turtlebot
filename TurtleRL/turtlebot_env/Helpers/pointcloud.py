@@ -11,8 +11,9 @@ import math
 from collections import deque
 from datetime import datetime as dt
 import time as t
-#NOTE: It returns a 5 dimensional entity: At each 480x640 pixel locations it stores the laser distance x,y, and z from camera
+import ros_numpy #sudo apt-get install ros-kinetic-ros-numpy
 
+#NOTE: It returns a 5 dimensional entity: At each 480x640 pixel locations it stores the laser distance x,y, and z from camera
 class pointcloud:
   def __init__(self, viz_save = False): #Saves a visualization of the depth map (x,y,z independently) as a jpg image
     self.image = []
@@ -23,7 +24,7 @@ class pointcloud:
     self.viz_save = viz_save
     #self.images.append(np.array([1,2,3,4,5]))
     #rospy.init_node('cam_observer')
-    rospy.Subscriber("/camera/depth/points", PointCloud2, self.callback1)
+    rospy.Subscriber("/camera/depth/points", PointCloud2, self.callback2)
   def see(self):
     while np.shape(self.images[-1])[0]!=3:
         try: 
@@ -33,6 +34,22 @@ class pointcloud:
         except:
             #print("OpenCV error")
             pass
+  def callback2(self,msg): #5 times faster than callback1
+    pc = ros_numpy.numpify(msg)
+    height = pc.shape[0]
+    width = pc.shape[1]
+    np_points = np.zeros((height,width, 3), dtype=np.float32)
+    np_points[:,:,0] = np.resize(pc['x'], (height,width))
+    np_points[:,:,1] = np.resize(pc['y'], (height,width))
+    np_points[:,:,2] = np.resize(pc['z'], (height,width))
+    cv2.imwrite('x.jpg', np_points[:,:,0]*100)
+    cv2.imwrite('y.jpg', np_points[:,:,1]*100)
+    cv2.imwrite('z.jpg', np_points[:,:,2]*100)
+    #cv2.imwrite('current_depth_image.png', np_points*200)
+    print("File end")
+    self.image = np_points
+    self.images.append(self.image)
+
   def callback1(self,msg): #About 7 times faster than callback
     #data_out = pc2.read_points(msg, skip_nans=False) #Takes image the same size as camera - 480x640
     cloud_points = list(pc2.read_points(msg, skip_nans=False, field_names = ("x", "y", "z")))
@@ -119,6 +136,8 @@ class pointcloud:
 
 #Testing functions 
 if __name__ == '__main__':
+
+    #(callback2- fastest)
     rospy.init_node('depth_point_cloud')
     p = pointcloud(viz_save = True)
     t.sleep(1) #Need 1 second sleep for some reason
@@ -127,7 +146,18 @@ if __name__ == '__main__':
     print(dt.now())
     status = cv2.imwrite('current_depth_image.png',image) 
 
-    #old function
+    '''
+    #(callback1)
+    rospy.init_node('depth_point_cloud')
+    p = pointcloud(viz_save = True)
+    t.sleep(1) #Need 1 second sleep for some reason
+    print(dt.now())
+    image = p.see()*200.0
+    print(dt.now())
+    status = cv2.imwrite('current_depth_image.png',image) 
+    '''
+
+    #old function (callback)
     '''
     p = pointcloud(viz_save = True)
     #t.sleep(5)
