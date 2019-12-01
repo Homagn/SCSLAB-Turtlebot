@@ -53,7 +53,7 @@ class mover:
         #Take feedback from self.x_real, self.y_real, etc
         #To implement
         return
-    def get_model_pos(self): #get model position in simulator
+    def get_model_pos(self): #get model position in simulator (Note! updates the origin)
         for block in self.blockListDict.itervalues():
             blockName = str(block._name)
             #resp_coordinates = self.model_coordinates(blockName, block._relative_entity_name)
